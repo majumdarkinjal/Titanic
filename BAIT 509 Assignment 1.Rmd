@@ -1,0 +1,338 @@
+---
+title: "Question 3 BAIT 509 Assignment 1"
+author: "Kinjal Majumdar"
+date: "January 18, 2019"
+---
+
+###Question 3 a
+
+```{r Data Loading}
+
+
+#Load the appropriate packages
+library(tidyverse)
+library(dplyr) # Data Manipulation
+library(Amelia) # Missing Data: Missings Map
+library(ggplot2) # Visualization
+library(scales) # Visualization
+library(caTools) # Prediction: Splitting Data
+library(caret) # Prediction: k-Fold Cross Validation
+library(ROCR) # Prediction: ROC Curve
+
+#Read the dataset 
+mydata <- read.csv("https://raw.githubusercontent.com/vincenzocoia/BAIT509/master/assessments/assignment1/data/titanic.csv")
+str(mydata)
+summary(mydata)
+```
+
+```{r Raw Feature Plot}
+
+
+#Creating the Fare and Age explanatory variables
+fare <- mydata$fare
+age <-mydata$age
+
+#Log transform fare 
+mydata$Fare.log <- log(mydata$Fare) 
+
+#Creating a plot of Fare vs age
+plot(fare~age, data = mydata, xlab = "Age (Years)", ylab = "Fare($)", pch = 16, 
+     main  = "Plot of explanatory variables: Fare and Age")
+
+```
+## The first step before proceeding with the question is preparing and cleaning the data.
+
+## In going through the dataset, I've noticed that there are several NA values for age. I've also noticed that certain fare values have been recorded as 0, assuming these were the passengers who did not pay the designated fare or recieved free tickets. These entries prove problematic since any further transformations such as the log transformation on 0 would yield values of infinity. Since the number of such entries is relatively small I've decided to omit them from our analysis without impact to model building. 
+
+```{r Data Preparation and Cleaning}
+nrow(mydata)
+mydata <- subset(mydata, !is.na(mydata$Age)) # subsetting after removing NA values of age
+mydata <- subset(mydata, mydata$Fare != 0) # subsetting after removing fare values of 0
+nrow(mydata) # Check the new row count
+```
+
+
+# Scaling the data
+
+The lowess classifier we create a subset of data from the original which has values of the predictors within a particular range of predicted values. To proceed with loess classificaton, we select the highest frequency occurence, or the mode as the reference data point. In the case of the  kNN classifier, we subset the data to obtain k observations (rows) such that these neighbours are closest to values (X1,.,Xp) are closest to (x1,.,xp). Just like Lowess, we choose the mode of these subsetted observations. Since the Euclidean distance is important to obtain the k nearest neighbours in kNN and similarly all observations within range r for loess, we would need to standardize predictors or features, since the spread of fare values is far higher than the spread of age and would have a negative effect on any models we develop. Therefore, the range of all features will need to be normalized so that each feature contributes in equal proportion to it's corresponding euclidean distance.
+
+Reference taken from: https://en.wikipedia.org/wiki/Feature.scaling
+
+Data Normalization:
+
+Fare = Fare(ith observation) - mean(Fare) / Standard Deviation(Fare) Age = Age(ith observation) - mean(Age) / Standard Deviation(Age)
+
+
+Standardize the predictors and split the data on the basis of gender- male and female 
+
+```{r}
+mydata.female <- subset(mydata, mydata$Sex == "female")
+mydata.male <- subset(mydata, mydata$Sex == "male")
+
+```
+
+Create male and female training and test datasets:
+
+```{r}
+#Number of observations in the dataset
+nrow(mydata.female)
+nrow(mydata.male)
+
+#For the Female data
+#set.seed(100)
+mydata.female <- mutate(mydata.female, training = sample(1:2, replace = TRUE, prob = c(0.7, 0.3), size = nrow(mydata.female))) 
+
+#Female training dataset
+mydata.female.train <- subset(mydata.female, training == 1) 
+mydata.female.test <- subset(mydata.female, training == 2) 
+
+#For Male dataset
+#set.seed(100)
+mydata.male <- mutate(mydata.male, training = sample(1:2, replace = TRUE, prob = c(0.7, 0.3), size = nrow(mydata.male))) 
+
+# Male training dataset
+mydata.male.train <- subset(mydata.male, training == 1) 
+mydata.male.test <- subset(mydata.male, training == 2)  
+
+
+```
+
+
+```{r Scaling the datasets}
+
+#Calculating Std Deviation for Log(Fare) and Age 
+
+# Male training data
+Age.male.train.sd <- sd(mydata.male.train$Age) # Age sd
+
+Fare.male.train.logsd <- sd(mydata.male.train$Fare.log) # log fare sd
+
+
+Fare.male.train.logsd
+Age.male.train.sd
+
+#Calculating the mean of Log of Fare, and Age predictors for the male training dataset
+Age.male.train.mean <- mean(mydata.male.train$Age)
+Fare.male.train.log.mean <- mean(mydata.male.train$Fare.log)
+
+
+Age.male.train.mean # Mean of age
+Fare.male.train.log.mean # Mean of Fare
+
+
+#Now we standardize log Fare and age (Male)
+
+mydata.male.train$Fare.std <- (mydata.male.train$Fare.log-Fare.male.train.log.mean)/Fare.male.train.log.sd
+mydata.male.train$Age.std <- (mydata.male.train$Age - Age.male.train.mean)/Age.male.train.sd
+
+
+mydata.male.test$Fare.std <- (mydata.male.test$Fare.log -Fare.male.train.log.mean)/Fare.male.train.log.sd
+mydata.male.test$Age.std <- (mydata.male.test$Age - Age.male.train.mean)/Age.male.train.sd
+
+```
+
+```
+
+
+
+
+```
+
+```{r }
+
+#Now we repeat as above and standardize log Fare and age (Female)
+Age.female.train.sd <- sd(mydata.female.train$Age)
+
+Fare.female.train.log.sd <- sd(mydata.female.train$Fare.log)
+
+
+Age.female.train.sd
+Fare.female.train.log.sd
+
+
+Fare.female.train.log.mean <- mean(mydata.female.train$Fare.log)
+Age.female.train.mean <- mean(mydata.female.train$Age)
+Fare.female.train.log.mean
+Age.female.train.mean
+
+#Standardize Log(Fare) and Age 
+mydata.female.train$Fare.std <- (mydata.female.train$Fare.log -Fare.female.train.log.mean)/Fare.female.train.log.sd
+mydat.female.train$Age.std <- (mydata.female.train$Age - Age.female.train.mean)/Age.female.train.sd
+
+
+
+```
+
+```{r Standardization for Female Test data}
+
+#Standardize Log(Fare) and Age predictors
+mydata.female.test$Fare.std <- (dat.female.test$Fare.log - Fare.female.train.log.mean)/Fare.female.train.log.sd
+mydata.female.test$Age.std <- (mydata.female.test$Age - Age.female.train.mean)/Age.female.train.sd
+
+
+```
+
+```{r Plot log(Fare) and Age}
+
+plot(Fare.log ~ Age, data = dat.male.train, xlab = "Age(in years)", ylab = "Logarithm of Fare", pch = 16, main  = "Predictors: Logarithm of Fare vs Age for Male Training Dataset")
+
+plot(Fare.log ~ Age, data = dat.male.test, xlab = "Age(in years)", ylab = "Logarithm of Fare", pch = 16, main  = "Predictors: Logarithm of Fare vs Age for Male Testing Dataset")
+
+plot(Fare.log ~ Age, data = dat.female.train, xlab = "Age(in years)", ylab = "Logarithm of Fare", pch = 16, main  = "Predictors: Logarithm of Fare vs Age for Female Training Dataset")
+
+
+plot(Fare.log ~ Age, data = dat.female.test, xlab = "Age(in years)", ylab = "Logarithm of Fare", pch = 16, main  = "Predictors: Logarithm of Fare vs Age for Female Test Dataset")
+```
+
+###Q3b 
+##Fitting a lowess model and calculating the MSE for male and female datasets
+```{r}
+bandwidth <- seq(0.1, 1, 0.1)
+
+```
+
+```{r for female training dataset}
+mse.female.train <- c()
+for (i in bandwidth) {
+  fit.female.train <- loess(Survived ~ Age.std + Fare.std, data = dat.female.train, span = i)
+  error <- predict(fit.female.train, newdata = dat.female.train) - dat.female.train$Survived
+  mse.female.train <- c(mse.female.train, mean(error^2, na.rm = TRUE))
+}
+qplot(bandwidth, mse.female.train, geom = c("point", "line"), xlab = "Bandwidth", ylab = "MSE (Error)") + ggtitle(
+"Female Training MSE vs Bandwidth")
+```
+
+```{r for female test dataset}
+mse.female.test <- c()
+for (i in bandwidth) {
+  fit.female.test <- loess(Survived ~ Age.std + Fare.std, data = dat.female.test, span = i)
+  error <- predict(fit.female.test, newdata = dat.female.test) - dat.female.test$Survived
+  mse.female.test <- c(mse.female.test, mean(error^2, na.rm = TRUE))
+}
+qplot(bandwidth, mse.female.test, geom = c("point", "line"), xlab = "Bandwidth", ylab = "MSE (Error)") + ggtitle(
+"Female Testing MSE vs Bandwidth")
+```
+
+```{r for male training dataset}
+mse.male.train <- c()
+for (i in bandwidth) {
+  fit.male.train <- loess(Survived ~ Age.std + Fare.std, data = dat.male.train, span = i)
+  error <- predict(fit.male.train, newdata = dat.male.train) - dat.male.train$Survived
+  mse.male.train <- c(mse.male.train, mean(error^2, na.rm = TRUE))
+}
+qplot(bandwidth, mse.male.train, geom = c("point", "line"), xlab = "Bandwidth", ylab = "MSE (Error)") + ggtitle(
+"Male Training MSE vs Bandwidth")
+```
+
+```{r for male test dataset}
+mse.male.test <- c()
+for (i in bandwidth) {
+  fit.male.test <- loess(Survived ~ Age.std + Fare.std, data = dat.male.test, span = i)
+  error <- predict(fit.male.test, newdata = dat.male.test) - dat.male.test$Survived
+  mse.male.test <- c(mse.male.test, mean(error^2, na.rm = TRUE))
+}
+qplot(bandwidth, mse.male.test, geom = c("point", "line"), xlab = "Bandwidth", ylab = "MSE (Error)") + ggtitle(
+"Male Testing MSE vs Bandwidth")
+```
+
+
+
+
+###Q3c
+
+```{r}
+train.male.error <- c()
+train.female.error <- c()
+test.male.error <- c()
+test.female.error <- c()
+
+bw <- seq(0.1, 2, by = 0.1)
+```
+
+```{r}
+for(i in bw){
+ #variable model based on the value of i
+ model.male.var <- loess(Survived ~ Fare.std + Age.std, data=dat.male.train, span=i)
+ model.female.var <- loess(Survived ~ Fare.std + Age.std, data=dat.female.train, span=i)
+
+ 
+ #predictions for both male and female training and testing data
+ predictions.train.male <- predict(model.male.var, dat.male.train)
+ predictions.train.female <- predict(model.female.var, dat.female.train)
+ predictions.test.male <- predict(model.male.var, dat.male.test)
+ predictions.test.female <- predict(model.female.var, dat.female.test)
+ 
+ #Scale test values 
+ predictions.test.female[predictions.test.female < 0.5] <- 0
+ predictions.test.female[predictions.test.female >= 0.5] <- 1
+ predictions.test.male[predictions.test.male < 0.5] <- 0
+ predictions.test.male[predictions.test.male >= 0.5] <- 1
+ 
+ #Scale training values
+ predictions.train.female[predictions.train.female < 0.5] <- 0
+ predictions.train.female[predictions.train.female >= 0.5] <- 1
+ predictions.train.male[predictions.train.male < 0.5] <- 0
+ predictions.train.male[predictions.train.male >= 0.5] <- 1
+
+ #Creating confusion matrix 
+ accuracy.train.male <- table(predictions.train.male, dat.male.train$Survived)
+ a.tr.male <- sum(diag(accuracy.train.male))/sum(accuracy.train.male)
+ 
+ #Male training accuracy
+ accuracy.test.male <- table(predictions.test.male, dat.male.test$Survived)
+ a.t.male <- sum(diag(accuracy.test.male))/sum(accuracy.test.male)
+ 
+ #Female training accuracy
+ accuracy.train.female <- table(predictions.train.female, dat.female.train$Survived)
+ a.tr.female <- sum(diag(accuracy.train.female))/sum(accuracy.train.female)
+ 
+ 
+ 
+ #accuracy for test-female
+ accuracy.test.female <- table(predictions.test.female, dat.female.test$Survived)
+ a.t.female <- sum(diag(accuracy.test.female))/sum(accuracy.test.female)
+ 
+
+ train.male.error <- c(train.male.error, 1 - a.tr.male)
+ train.female.error <- c(train.female.error, 1 - a.tr.female)
+ test.male.error <- c(test.male.error, 1 - a.t.male)
+ test.female.error <- c(test.female.error, 1 - a.t.male)
+}
+
+```
+
+Ref: Correlation matrix based on the high level idea discussion with Prakhar Sinha
+
+```{r}
+qplot(unlist(bw), unlist(train.male.errors), geom = c("point", "line"), xlab = "Bandwidth", ylab =
+        "Training Dataset errors") + ggtitle("Male training dataset error")
+```
+
+```{r}
+qplot(unlist(bw), unlist(test.male.errors), geom = c("point", "line"), xlab = "Bandwidth", ylab =
+        "Training Dataset errors") + ggtitle("Male testing dataset error")
+```
+
+```{r}
+qplot(unlist(bw), unlist(train.female.errors), geom = c("point", "line"), xlab = "Bandwidth", ylab =
+        "Training Dataset errors") + ggtitle("Male testing dataset error")
+```
+
+```{r}
+qplot(unlist(bw), unlist(test.female.errors), geom = c("point", "line"), xlab = "Bandwidth", ylab =
+        "Training Dataset errors") + ggtitle("Female testing dataset error")
+```
+
+```{r}
+
+qplot(unlist(bw), unlist(test.errors), geom = c("point", "line"), xlab = "Bandwidth", ylab =
+"Test errors") + ggtitle("Average test dataset error")
+```
+#How does the training error curve differ from the test error curve, and why? 
+Male Dataset:-
+From the dataset for male 
+
+#From this plot, using the "validation set approach" for choosing hyperparameters, what bandwidth is appropriate? 
+
+#Do you get similar results  when you considered the MSE in the regression case above?
+From the above, we get similar bandwidth for the test and 
